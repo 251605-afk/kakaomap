@@ -1,9 +1,14 @@
+① 페르소나
+나는 카카오맵 __________ 서비스를 만들고 있는 고등학생이야.
+
+② 맥락 + 현재 코드
+아래는 내 현재 index.html 전체야:
 <!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>교통약자 친화 접근성 지도</title>
+    <title>카카오맵 장소 검색 서비스</title>
     <style>
         /* 기본 레이아웃 설정 */
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -41,47 +46,12 @@
 
         button {
             padding: 10px 15px;
-            background: #007bff; /* 신뢰감을 주는 파란색으로 변경 */
-            color: white;
+            background: #ffeb00; /* 카카오 노란색 */
             border: none;
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
         }
-
-        button:hover {
-            background: #0056b3;
-        }
-
-        #result-list {
-            list-style: none;
-        }
-
-        .item {
-            padding: 15px;
-            border-bottom: 1px solid #eee;
-            background: white;
-            margin-bottom: 10px;
-            border-radius: 6px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            cursor: pointer;
-        }
-
-        .item:hover {
-            background: #e9ecef;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 3px 6px;
-            font-size: 11px;
-            font-weight: bold;
-            border-radius: 3px;
-            color: white;
-            margin-top: 5px;
-        }
-        .bg-success { background-color: #28a745; }
-        .bg-danger { background-color: #dc3545; }
 
         /* 오른쪽 지도 영역 */
         #map {
@@ -89,12 +59,13 @@
             height: 100%;
         }
 
-        /* 인포윈도우 커스텀 스타일 */
-        .info-window {
-            padding: 10px;
-            font-size: 12px;
-            line-height: 1.6;
-            min-width: 200px;
+        #result-list {
+            list-style: none;
+        }
+
+        .item {
+            padding: 15px 0;
+            border-bottom: 1px solid #eee;
         }
     </style>
 </head>
@@ -103,7 +74,7 @@
 <div id="container">
     <div id="sidebar">
         <div class="search-box">
-            <input type="text" id="keyword" placeholder="역 이름 또는 동네 이름 입력">
+            <input type="text" id="keyword" placeholder="장소를 입력하세요">
             <button onclick="searchPlaces()">검색</button>
         </div>
         <ul id="result-list">
@@ -119,87 +90,78 @@
     // 전역 변수 설정
     let map;
     let ps; // 장소 검색 객체
-    let markers = []; // 생성된 마커들을 관리할 배열
-    let currentInfoWindow = null; // 현재 열려있는 인포윈도우
 
-    // 페이지 로드 시 실행
+    // 1. 페이지 로드 시 실행
     window.onload = function() {
         initMap();
     };
 
-    // 지도 초기화 함수
+    // 2. 지도 초기화 함수
     function initMap() {
         const mapContainer = document.getElementById('map'); 
         const mapOption = {
-            center: new kakao.maps.LatLng(37.566826, 126.9786567), // 위치 권한 거부 시 기본 좌표
-            level: 5 
+            center: new kakao.maps.LatLng(37.566826, 126.9786567), // 위치 권한 거부 시 기본 좌표 (서울시청)
+            level: 5 // 요청하신 확대 레벨 5
         };
 
+        // 지도 생성
         map = new kakao.maps.Map(mapContainer, mapOption);
+        
+        // 장소 검색 객체 생성
         ps = new kakao.maps.services.Places();
 
-        // 현재 위치 권한 요청
+        // 3. 현재 위치 권한 요청
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(function(position) {
-                const lat = position.coords.latitude; 
-                const lon = position.coords.longitude; 
+                const lat = position.coords.latitude; // 위도
+                const lon = position.coords.longitude; // 경도
+                
                 const locPosition = new kakao.maps.LatLng(lat, lon);
                 
+                // 지도 중심을 현재 위치로 이동
                 map.setCenter(locPosition);
-                displayBaseMarker(locPosition, '현재 위치');
+                
+                // 내 위치 마커 표시
+                displayMarker(locPosition, '여기에 계신가요?');
+            }, function(error) {
+                console.error("위치 정보를 가져오는데 실패했습니다.", error);
             });
         }
     }
 
-    // 기본 내 위치 마커 표시 함수
-    function displayBaseMarker(locPosition, message) {
+    // 마커 표시 함수
+    function displayMarker(locPosition, message) {
         const marker = new kakao.maps.Marker({
             map: map,
             position: locPosition
         });
+
+        const iwContent = `<div style="padding:5px;">${message}</div>`;
         const infowindow = new kakao.maps.InfoWindow({
-            content : `<div style="padding:5px; font-size:12px;">${message}</div>`
+            content : iwContent,
+            removable : true
         });
+
         infowindow.open(map, marker);
     }
 
-    // 장소 검색 함수
+    // 4. 장소 검색 함수
     function searchPlaces() {
         const keyword = document.getElementById('keyword').value;
 
         if (!keyword.replace(/^\s+|\s+$/g, '')) {
-            alert('역 이름이나 동네 이름을 입력해주세요!');
+            alert('키워드를 입력해주세요!');
             return;
         }
-
-        // 새로운 검색을 시작할 때 기존 마커와 리스트 초기화
-        clearPreviousResults();
 
         // 카카오 장소 검색 API 호출
         ps.keywordSearch(keyword, placesSearchCB);
     }
 
-    // 기존 검색 결과(마커, 리스트, 인포윈도우)를 지우는 함수
-    function clearPreviousResults() {
-        // 1. 지도에 표시된 마커 제거
-        for (let i = 0; i < markers.length; i++) {
-            markers[i].setMap(null);
-        }
-        markers = []; // 배열 비우기
-
-        // 2. 왼쪽 리스트 비우기
-        document.getElementById('result-list').innerHTML = '';
-
-        // 3. 열려있는 팝업창 닫기
-        if (currentInfoWindow) {
-            currentInfoWindow.close();
-        }
-    }
-
-    // 장소 검색 완료 콜백 함수
+    // 장소 검색 완료 시 호출되는 콜백 함수
     function placesSearchCB(data, status, pagination) {
         if (status === kakao.maps.services.Status.OK) {
-            displayAccessibilityPlaces(data);
+            displayPlaces(data);
         } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
             alert('검색 결과가 존재하지 않습니다.');
         } else if (status === kakao.maps.services.Status.ERROR) {
@@ -207,102 +169,50 @@
         }
     }
 
-    // 가상의 교통약자 친화 데이터 매칭 함수 (가짜 데이터 생성기)
-    // 실제 서비스에서는 이 부분을 공공데이터 API 데이터와 연결해야 합니다.
-    function getAccessibilityData(placeName) {
-        // 역 이름이 포함되어 있으면 엘리베이터 확률을 높임
-        const isStation = placeName.includes('역');
-        const hasElevator = isStation ? (Math.random() > 0.2 ? '있음' : '없음') : (Math.random() > 0.6 ? '있음' : '없음');
-        const inclines = ['완만함(낮음)', '보통', '가파름(주의)'];
-        const randomIncline = inclines[Math.floor(Math.random() * inclines.length)];
-        
-        return {
-            elevator: hasElevator,
-            incline: randomIncline,
-            facilities: hasElevator === '있음' ? '장애인 화장실, 점자블록' : '주차 공간 협소'
-        };
-    }
-
-    // 검색 결과를 화면과 지도에 표시하는 함수
-    function displayAccessibilityPlaces(places) {
+    // 검색 결과를 왼쪽 리스트에 표시하는 함수
+    function displayPlaces(places) {
         const listEl = document.getElementById('result-list');
         const bounds = new kakao.maps.LatLngBounds();
         
+        listEl.innerHTML = ''; // 이전 결과 초기화
+
         for (let i = 0; i < places.length; i++) {
             const placePosition = new kakao.maps.LatLng(places[i].y, places[i].x);
             
-            // 해당 장소의 가상 접근성 데이터 가져오기
-            const accessData = getAccessibilityData(places[i].place_name);
-
-            // 엘리베이터 여부에 따른 배지 HTML 디자인
-            const elevatorBadge = accessData.elevator === '있음' 
-                ? `<span class="badge bg-success">엘리베이터 있음</span>` 
-                : `<span class="badge bg-danger">엘리베이터 없음</span>`;
-
-            // 1. 왼쪽 사이드바 리스트 아이템 추가
+            // 리스트 아이템 추가
             const itemEl = document.createElement('li');
             itemEl.className = 'item';
-            itemEl.innerHTML = `
-                <strong>${places[i].place_name}</strong><br>
-                <small>${places[i].address_name}</small><br>
-                ${elevatorBadge}
-            `;
+            itemEl.innerHTML = `<strong>${places[i].place_name}</strong><br><small>${places[i].address_name}</small>`;
             listEl.appendChild(itemEl);
 
-            // 2. 접근성 전용 마커 생성 (엘리베이터 유무에 따라 다른 색상 마커 이미지 적용 가능)
-            // 여기서는 기본 마커를 쓰고, 마커 이미지를 변경하고 싶다면 kakao.maps.MarkerImage를 사용하면 됩니다.
+            // 지도에 마커 추가
             const marker = new kakao.maps.Marker({
                 map: map,
                 position: placePosition
             });
 
-            // 마커 배열에 저장 (나중에 지우기 위함)
-            markers.push(marker);
-
-            // 3. 마커 클릭 시 나타날 팝업(인포윈도우) 내용 구성
-            const contentString = `
-                <div class="info-window">
-                    <strong>${places[i].place_name}</strong><br>
-                    <hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
-                    <b>주소:</b> ${places[i].address_name}<br>
-                    <b>경사도:</b> ${accessData.incline}<br>
-                    <b>엘리베이터:</b> ${accessData.elevator}<br>
-                    <b>편의시설:</b> ${accessData.facilities}
-                </div>
-            `;
-
-            const infowindow = new kakao.maps.InfoWindow({
-                content: contentString,
-                removable: true
-            });
-
-            // 마커 클릭 이벤트 등록
-            kakao.maps.event.addListener(marker, 'click', function() {
-                if (currentInfoWindow) {
-                    currentInfoWindow.close(); // 이전 팝업 닫기
-                }
-                infowindow.open(map, marker);
-                currentInfoWindow = infowindow; // 현재 열린 팝업 저장
-            });
-
-            // 리스트 아이템 클릭 시에도 지도 마커 팝업이 열리도록 연동
-            itemEl.onclick = function() {
-                if (currentInfoWindow) {
-                    currentInfoWindow.close();
-                }
-                infowindow.open(map, marker);
-                currentInfoWindow = infowindow;
-                map.panTo(placePosition); // 해당 위치로 부드럽게 지도 이동
-            };
-
-            // 지도 범위 확장을 위해 좌표 추가
+            // 검색된 장소들을 포함하도록 지도 범위 확장
             bounds.extend(placePosition);
         }
         
-        // 검색된 장소들이 한눈에 보이도록 지도 시점 조절
+        // 검색 결과에 맞춰 지도 화면 이동
         map.setBounds(bounds);
     }
 </script>
 
 </body>
 </html>
+
+③ 구체적 지시
+교통약자를 위한 접근성 지도를 만들고 싶어.
+사용자가 역 이름이나 동네 이름을 검색하면 카카오 키워드 검색 API를 사용해 실제 지하철역과 주변 시설 정보를 검색해줘.
+또한 공공데이터포털 또는 서울 열린데이터광장의 실제 데이터를 활용해 엘리베이터 설치 여부와 무장애 시설 정보를 표시해줘.
+검색 결과는 지도에 마커로 표시하고, 왼쪽 리스트에는 역 이름과 엘리베이터 유무를 나열해줘.
+마커를 클릭하면 주소, 편의시설 정보, 접근 가능 여부를 팝업으로 보여줘.
+새로 검색할 때는 기존 마커와 검색 결과 리스트를 삭제해줘.
+가상의 데이터는 사용하지 말고 실제 API 및 공공데이터 기반 정보만 활용해줘.
+가능하다면 경사도 정보는 국토지리정보원 또는 보행약자 이동지원 관련 실제 데이터를 활용해 표시해줘.
+
+④ 출력 형식
+전체 index.html을 다시 보여줘.
+변수명은 영어로, 주석은 한국어로.
