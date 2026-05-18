@@ -38,6 +38,40 @@
             gap: 8px;
         }
 
+        /* 탭 스타일 추가 */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 12px;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 8px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px 5px;
+            background: none;
+            color: #64748b;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            background: #e2e8f0;
+            color: #334155;
+        }
+
+        .tab-btn.active {
+            background: #2563eb;
+            color: white;
+        }
+
         .search-box {
             display: flex;
             gap: 6px;
@@ -57,7 +91,7 @@
             border-color: #2563eb;
         }
 
-        button {
+        .search-btn {
             padding: 12px 18px;
             background: #2563eb; /* 공공 웹사이트 표준 블루 */
             color: white;
@@ -69,7 +103,7 @@
             transition: background 0.2s;
         }
 
-        button:hover {
+        .search-btn:hover {
             background: #1d4ed8;
         }
 
@@ -112,9 +146,10 @@
         }
 
         /* 카테고리별 왼쪽 테두리 색상 구분 */
-        .item.library { border-left-color: #10b981; }  /* 도서관: 초록 */
-        .item.gym { border-left-color: #f59e0b; }      /* 체육관: 주황 */
-        .item.welfare { border-left-color: #8b5cf6; }  /* 복지관: 보라 */
+        .item.medical { border-left-color: #ef4444; }   /* 의료/보건: 빨강 */
+        .item.welfare { border-left-color: #8b5cf6; }   /* 공공/복지: 보라 */
+        .item.culture { border-left-color: #10b981; }   /* 교육/문화: 초록 */
+        .item.sports { border-left-color: #f59e0b; }    /* 체육/휴양: 주황 */
 
         .item strong {
             display: block;
@@ -157,13 +192,18 @@
 <div id="container">
     <div id="sidebar">
         <div class="title">🏛️ 생활 SOC 시설 탐색기</div>
+        
+        <div class="tabs">
+            <button class="tab-btn active" id="tab1" onclick="switchTab(1)">의료·보건·복지</button>
+            <button class="tab-btn" id="tab2" onclick="switchTab(2)">교육·문화·체육</button>
+        </div>
+
         <div class="search-box">
-            <input type="text" id="keyword" placeholder="동네 이름이나 시설(예: 도서관) 입력">
-            <button onclick="searchPlaces()">검색</button>
+            <input type="text" id="keyword" placeholder="지역명 입력 (예: 홍대, 정릉동) 생략 가능" onkeyup="if(window.event.keyCode==13){searchPlaces()}">
+            <button class="search-btn" onclick="searchPlaces()">검색</button>
         </div>
         <div class="result-count">검색 결과: <span id="count-num">0</span>개 (내 위치 기준 가까운 순)</div>
-        <ul id="result-list">
-            </ul>
+        <ul id="result-list"></ul>
     </div>
 
     <div id="map"></div>
@@ -178,6 +218,7 @@
     let currentCenter = null; // 사용자의 현재 위치 좌표 저장용
     let markers = []; 
     let currentInfoWindow = null; 
+    let currentTab = 1; // 현재 선택된 탭 (1 또는 2)
 
     // 페이지 로딩 완료 후 실행
     window.onload = function() {
@@ -213,8 +254,27 @@
                     content: '<div style="padding:5px; font-size:12px;">현재 내 위치</div>'
                 });
                 infoWindow.open(map, userMarker);
+
+                // 위치를 잡은 후 첫 번째 탭 자동 검색 실행
+                searchPlaces();
+            }, function() {
+                // GPS 동의 거부 시 기본 위치로 검색 실행
+                searchPlaces();
             });
+        } else {
+            searchPlaces();
         }
+    }
+
+    // 탭 전환 함수
+    function switchTab(tabNum) {
+        if(currentTab === tabNum) return;
+        currentTab = tabNum;
+        
+        document.getElementById('tab1').classList.toggle('active', tabNum === 1);
+        document.getElementById('tab2').classList.toggle('active', tabNum === 2);
+        
+        searchPlaces();
     }
 
     // 기존 검색 데이터 삭제 및 지도 초기화
@@ -230,46 +290,117 @@
         }
     }
 
-    // 시설 검색 핸들러
+    // 시설 통합 검색 핸들러
     function searchPlaces() {
-        const keyword = document.getElementById('keyword').value;
-
-        if (!keyword.replace(/^\s+|\s+$/g, '')) {
-            alert('검색어를 입력해주세요!');
-            return;
-        }
-
+        const keywordInput = document.getElementById('keyword').value.trim();
         clearPreviousResults();
 
-        // 검색 옵션 객체 생성
-        const searchOptions = {};
-        
-        // 사용자의 현재 위치가 파악되어 있다면, 해당 위치 기준 거리순(ACCURACY) 정렬 옵션 부여
+        // 위치 기준 기본 옵션 설정
+        const searchOptions = {
+            size: 15
+        };
         if (currentCenter) {
             searchOptions.location = currentCenter;
             searchOptions.sort = kakao.maps.services.SortBy.ACCURACY; 
         }
 
-        // 카카오 API 검색 실행
-        ps.keywordSearch(keyword, placesSearchCB, searchOptions);
-    }
+        let searchTasks = [];
 
-    // 검색 결과 콜백 처리 함수
-    function placesSearchCB(data, status, pagination) {
-        if (status === kakao.maps.services.Status.OK) {
-            displaySocPlaces(data);
-        } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
-            alert('검색 결과가 존재하지 않습니다.');
-        } else if (status === kakao.maps.services.Status.ERROR) {
-            alert('검색 과정 중 시스템 오류가 발생했습니다.');
+        // 탭 1: 의료, 보건, 공공, 복지
+        if (currentTab === 1) {
+            const categories = ['HP8', 'PM9', 'PO3']; // 병원, 약국, 공공기관
+            
+            // 1. 카테고리 코드 검색 태스크 추가
+            categories.forEach(cat => {
+                searchTasks.push(new Promise((resolve) => {
+                    ps.categorySearch(cat, (data, status) => {
+                        resolve(status === kakao.maps.services.Status.OK ? data : []);
+                    }, searchOptions);
+                }));
+            });
+
+            // 2. 카테고리 코드로 안 묶이는 '사회복지관' 키워드 추가 검색 (검색어 입력 유무 결합)
+            const welfareKeyword = keywordInput ? `${keywordInput} 사회복지관` : '사회복지관';
+            searchTasks.push(new Promise((resolve) => {
+                ps.keywordSearch(welfareKeyword, (data, status) => {
+                    resolve(status === kakao.maps.services.Status.OK ? data : []);
+                }, searchOptions);
+            }));
+
+        // 탭 2: 교육, 문화, 체육, 휴양
+        } else if (currentTab === 2) {
+            const categories = ['CT1', 'SC4']; // 문화시설, 학교
+            
+            // 1. 카테고리 코드 검색 태스크 추가
+            categories.forEach(cat => {
+                searchTasks.push(new Promise((resolve) => {
+                    ps.categorySearch(cat, (data, status) => {
+                        resolve(status === kakao.maps.services.Status.OK ? data : []);
+                    }, searchOptions);
+                }));
+            });
+
+            // 2. 키워드 기반 시설군 개별 검색 (체육관, 수영장, 공원)
+            const extraKeywords = ['체육관', '수영장', '공원'];
+            extraKeywords.forEach(kw => {
+                const combinedKeyword = keywordInput ? `${keywordInput} ${kw}` : kw;
+                searchTasks.push(new Promise((resolve) => {
+                    ps.keywordSearch(combinedKeyword, (data, status) => {
+                        resolve(status === kakao.maps.services.Status.OK ? data : []);
+                    }, searchOptions);
+                }));
+            });
         }
+
+        // 모든 비동기 검색 요청이 끝나면 데이터 병합 및 정렬 후 출력
+        Promise.all(searchTasks).then((results) => {
+            // 2차원 배열을 1차원으로 병합하고 중복 아이디 제거
+            let mergedData = [].concat(...results);
+            const uniqueData = Array.from(new Map(mergedData.map(item => [item.id, item])).values());
+
+            // 검색어(지역명 등)가 입력되었을 경우 주소나 이름에 필터링 반영
+            let filteredData = uniqueData;
+            if(keywordInput && currentTab === 1) { 
+                // 탭1에서 카테고리 코드로 긁어온 데이터 중 지역명 필터링용
+                filteredData = uniqueData.filter(place => 
+                    place.address_name.includes(keywordInput) || place.place_name.includes(keywordInput)
+                );
+            }
+
+            // 거리순 정렬 (데이터에 거리가 있다면)
+            filteredData.sort((a, b) => {
+                return (parseInt(a.distance) || 0) - (parseInt(b.distance) || 0);
+            });
+
+            if (filteredData.length > 0) {
+                displaySocPlaces(filteredData);
+            } else {
+                alert('주변에 해당하는 생활 SOC 시설 검색 결과가 없습니다.');
+            }
+        });
     }
 
-    // 카테고리별 식별 텍스트 변환 및 마커 이미지 분기 함수
-    function getCategoryType(placeName) {
-        if (placeName.includes('도서관')) return { className: 'library', color: 'green' };
-        if (placeName.includes('체육') || placeName.includes('스포츠') || placeName.includes('운동')) return { className: 'gym', color: 'orange' };
-        if (placeName.includes('복지')) return { className: 'welfare', color: 'purple' };
+    // 카테고리별 마커 이미지 및 CSS 클래스 분기 함수
+    function getCategoryProps(place) {
+        const name = place.place_name;
+        const catCode = place.category_group_code;
+
+        // 탭 1 세부 분류
+        if (catCode === 'HP8' || catCode === 'PM9' || name.includes('보건소')) {
+            return { className: 'medical', color: 'red' }; // 의료/보건: 빨강
+        }
+        if (catCode === 'PO3' || name.includes('복지')) {
+            return { className: 'welfare', color: 'purple' }; // 공공/복지: 보라
+        }
+
+        // 탭 2 세부 분류
+        if (catCode === 'CT1' || catCode === 'SC4' || name.includes('도서관') || name.includes('박물관') || name.includes('미술관')) {
+            return { className: 'culture', color: 'green' }; // 교육/문화: 초록
+        }
+        if (name.includes('체육') || name.includes('스포츠') || name.includes('운동') || name.includes('수영장') || name.includes('공원')) {
+            return { className: 'sports', color: 'orange' }; // 체육/휴양: 주황
+        }
+
         return { className: 'default', color: 'blue' };
     }
 
@@ -279,20 +410,19 @@
         const countNumEl = document.getElementById('count-num');
         const bounds = new kakao.maps.LatLngBounds();
 
-        // 상단에 총 검색 결과 개수 바인딩
         countNumEl.innerText = places.length;
 
         for (let i = 0; i < places.length; i++) {
             const place = places[i];
             const placePosition = new kakao.maps.LatLng(place.y, place.x);
             
-            // 키워드 매칭을 통해 카테고리 속성 분류 추출
-            const category = getCategoryType(place.place_name);
+            // 시설 세부 성격 추출
+            const category = getCategoryProps(place);
 
-            // 거리 데이터 가공 처리 (미터 단위를 키로미터 형태로 깔끔하게 변환)
-            const distanceText = place.distance ? `${(parseInt(place.distance) / 1000).toFixed(1)}km 떨어짐` : '';
+            // 거리 데이터 가공
+            const distanceText = place.distance ? `${(parseInt(place.distance) / 1000).toFixed(1)}km 떨어짐` : '거리 정보 없음';
 
-            // 1. 왼쪽 사이드바 리스트 템플릿 생성
+            // 1. 왼쪽 사이드바 리스트 엘리먼트 생성
             const itemEl = document.createElement('li');
             itemEl.className = `item ${category.className}`;
             itemEl.innerHTML = `
@@ -303,16 +433,17 @@
             `;
             listEl.appendChild(itemEl);
 
-            // 2. 카테고리 색상에 따른 마커 커스텀 이미지 주소 맵핑 (카카오 기본 리소스 및 오픈소스 마커 활용)
-            let markerImageUrl = 'https://t1.daumcdn.net/localimg/localimages/07/2012/img/marker_p.png'; // 기본 파랑
+            // 2. 카테고리 색상별 마커 이미지 주소 맵핑 (카카오 공식 리소스 주소 활용)
+            let markerImageUrl = 'https://t1.daumcdn.net/localimg/localimages/07/2012/img/marker_p.png'; // 파랑 (기본)
+            if (category.color === 'red') markerImageUrl = 'https://t1.daumcdn.net/mapwin/images/marker/mu_red.png';
+            if (category.color === 'purple') markerImageUrl = 'https://t1.daumcdn.net/mapwin/images/marker/mu_purple.png';
             if (category.color === 'green') markerImageUrl = 'https://t1.daumcdn.net/mapwin/images/marker/mu_green.png';
             if (category.color === 'orange') markerImageUrl = 'https://t1.daumcdn.net/mapwin/images/marker/mu_orange.png';
-            if (category.color === 'purple') markerImageUrl = 'https://t1.daumcdn.net/mapwin/images/marker/mu_purple.png';
 
             const markerImageSize = new kakao.maps.Size(30, 35);
             const markerImage = new kakao.maps.MarkerImage(markerImageUrl, markerImageSize);
 
-            // 지도 상 마커 객체 인스턴스 생성
+            // 지도 상 마커 객체 생성
             const marker = new kakao.maps.Marker({
                 map: map,
                 position: placePosition,
@@ -320,7 +451,7 @@
             });
             markers.push(marker);
 
-            // 3. 팝업(인포윈도우) 내부 디자인 정의
+            // 3. 인포윈도우 디자인 정의
             const contentString = `
                 <div class="info-window">
                     <strong>${place.place_name}</strong>
@@ -334,25 +465,25 @@
                 removable: true
             });
 
-            // 마커 고유 클릭 이벤트 연결
+            // 마커 클릭 이벤트 연결
             kakao.maps.event.addListener(marker, 'click', function() {
                 if (currentInfoWindow) currentInfoWindow.close();
                 infoWindow.open(map, marker);
                 currentInfoWindow = infoWindow;
             });
 
-            // 왼쪽 사이드 리스트 엘리먼트 클릭 연동
+            // 사이드 리스트 클릭 이벤트 연결
             itemEl.onclick = function() {
                 if (currentInfoWindow) currentInfoWindow.close();
                 infoWindow.open(map, marker);
                 currentInfoWindow = infoWindow;
-                map.panTo(placePosition); // 클릭한 타겟 위치로 지도 부드럽게 중심 축 변환
+                map.panTo(placePosition);
             };
 
             bounds.extend(placePosition);
         }
 
-        // 전체 마커 밸런스에 맞춰 카메라 화각 리사이징
+        // 검색된 장소들이 모두 보이도록 지도 화면 범위 재조정
         map.setBounds(bounds);
     }
 </script>
